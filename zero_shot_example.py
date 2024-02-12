@@ -16,8 +16,11 @@ from utils import (
 # Use EchoCLIP for zero-shot tasks like ejection fraction prediction
 # or pacemaker detection. It has a short context window because it
 # uses the CLIP BPE tokenizer, so it can't process an entire report at once.
+# echo_clip, _, preprocess_val = create_model_and_transforms(
+#     "hf-hub:mkaichristensen/echo-clip", precision="bf16", device="cuda"
+# )
 echo_clip, _, preprocess_val = create_model_and_transforms(
-    "hf-hub:mkaichristensen/echo-clip", precision="bf16", device="cuda"
+    "hf-hub:mkaichristensen/echo-clip", precision="float32", device="cuda"
 )
 
 # We'll use random noise in the shape of a 10-frame video in this example, but you can use any image
@@ -26,16 +29,21 @@ test_video = read_avi(
     "example_video.avi",
     (224, 224),
 )
+print(f"Shape of test_video: {test_video.shape}")
+
 test_video = torch.stack(
     [preprocess_val(T.ToPILImage()(frame)) for frame in test_video], dim=0
 )
 test_video = test_video[0:min(40, len(test_video)):2]
 test_video = test_video.cuda()
-test_video = test_video.to(torch.bfloat16)
+test_video = test_video.to(torch.float32)
+
+print(f"Shape of test_video: {test_video.shape}")
 
 # Be sure to normalize the CLIP embedding after calculating it to make
 # cosine similarity between embeddings easier to calculate.
-test_video_embedding = F.normalize(echo_clip.encode_image(test_video), dim=-1)
+test_video_embedding = F.normalize(echo_clip.encode_image(test_video), dim=-1) #[20, 512]
+print(f"Shape of test_video_embedding: {test_video_embedding.shape}")
 
 # Add in a batch dimension because the zero-shot functions expect one
 test_video_embedding = test_video_embedding.unsqueeze(0)
