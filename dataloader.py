@@ -22,9 +22,9 @@ seed(42)
 torch.random.manual_seed(42)
 np.random.seed(42)
 
-img_path_dataset = '/workspace/as_tom_annotations-all.csv'
-tab_path_dataset = '/workspace/finetuned_df.csv'
-dataset_root = r"/workspace/as_tom"
+img_path_dataset = '/data/workspace/andrea/as_tom_annotations-all.csv'
+tab_path_dataset = '/data/workspace/andrea/finetuned_df.csv'
+dataset_root = r"/data/workspace/andrea/as_tom" #r"/workspace/as_tom"
 cine_loader = 'mat_loader'
 
 # filter out pytorch user warnings for upsampling behaviour
@@ -159,11 +159,11 @@ def get_video_dataloader(args, split, mode):
     if mode=='train':
         if args.sampler == 'AS':
             sampler_AS = dset.class_samplers()
-            loader = DataLoader(dset, batch_size=bsize, sampler=sampler_AS)
+            loader = DataLoader(dset, batch_size=bsize, sampler=sampler_AS, num_workers=args.num_workers)
         else: # random sampling
-            loader = DataLoader(dset, batch_size=bsize, shuffle=True)
+            loader = DataLoader(dset, batch_size=bsize, shuffle=True, num_workers=args.num_workers)
     else:
-        loader = DataLoader(dset, batch_size=bsize, shuffle=True)
+        loader = DataLoader(dset, batch_size=bsize, shuffle=True, num_workers=args.num_workers)
     return loader
 
 def get_img_dataloader(args, split, mode='train'):
@@ -245,11 +245,11 @@ def get_img_dataloader(args, split, mode='train'):
     if mode=='train':
         if args.sampler == 'AS':
             sampler_AS = dset.class_samplers()
-            loader = DataLoader(dset, batch_size=bsize, sampler=sampler_AS)
+            loader = DataLoader(dset, batch_size=bsize, sampler=sampler_AS, num_workers=args.num_workers)
         else: # random sampling
-            loader = DataLoader(dset, batch_size=bsize, shuffle=True)
+            loader = DataLoader(dset, batch_size=bsize, shuffle=True, num_workers=args.num_workers)
     else:
-        loader = DataLoader(dset, batch_size=bsize, shuffle=True)
+        loader = DataLoader(dset, batch_size=bsize, shuffle=True, num_workers=args.num_workers)
     return loader
 
 
