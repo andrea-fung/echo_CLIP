@@ -7,9 +7,23 @@ def parse_arguments():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
+        "--num_workers",
+        type=int,
+        default=0,
+        help="Number of workers for dataloader",
+    )
+
+    parser.add_argument(
+        "--results-db",
+        type=str,
+        default="/data/workspace/andrea/logs",
+        help="",
+    )
+
+    parser.add_argument(
         "--save",
         type=str,
-        default="/workspace/echo_CLIP/logs/finetuned_endtoend",
+        default="/data/workspace/andrea/logs/finetuned_endtoend",
         help="Optionally save a _classifier_, e.g. a zero shot classifier or probe.",
     )
 
@@ -21,7 +35,7 @@ def parse_arguments():
 
     parser.add_argument(
         "--freeze-encoder",
-        default=True,
+        default=False,
         action="store_true",
         help="Whether or not to freeze the image encoder. Only relevant for fine-tuning."
     )
@@ -35,7 +49,7 @@ def parse_arguments():
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=16
+        default=1
     )
     
     parser.add_argument(
@@ -159,12 +173,7 @@ def parse_arguments():
         default=None,
         help="Name of the experiment, for organization purposes only."
     )
-    parser.add_argument(
-        "--results-db",
-        type=str,
-        default="/workspace/echo_CLIP/logs",
-        help="Where to store the results, else does not store",
-    )
+
     parser.add_argument(
         "--model",
         type=str,
@@ -193,7 +202,7 @@ def parse_arguments():
     parser.add_argument(
         "--load",
         type=lambda x: x.split(","),
-        default="/workspace/echo_CLIP/logs/image_encoder.pt",
+        default=None,
         help="Optionally load _classifiers_, e.g. a zero shot classifier or probe or ensemble both.",
     )
     
