@@ -47,6 +47,12 @@ def parse_arguments():
     )
 
     parser.add_argument(
+        "--wandb_dir",
+        type=str,
+        default="/data/workspace/andrea"
+    )
+
+    parser.add_argument(
         "--batch_size",
         type=int,
         default=1
