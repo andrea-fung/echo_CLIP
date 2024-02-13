@@ -25,19 +25,20 @@ def eval(model, dataloader, loss_fn, conf_AS):
     preds = []
     labels = []
     ## count = 0
-    for cine, _, label_AS in tqdm(dataloader):
-        ## count+=1
-        
-        cine = cine.squeeze(0)
-        cine = cine.cuda()
-        label_AS = label_AS.cuda()
+    with torch.set_grad_enabled(False):
+        for cine, _, label_AS in tqdm(dataloader):
+            ## count+=1
+            
+            cine = cine.squeeze(0)
+            cine = cine.cuda()
+            label_AS = label_AS.cuda()
 
-        pred = model(cine) #[f, 4] 
-        pred = pred.mean(dim=0) #[f, 4]
-        preds.append(pred.tolist())
-        labels.append(int(label_AS))
-        loss = loss_fn(pred.unsqueeze(0), label_AS)
-        losses += [loss]
+            pred = model(cine) #[f, 4] 
+            pred = pred.mean(dim=0) #[f, 4]
+            preds.append(pred.tolist())
+            labels.append(int(label_AS))
+            loss = loss_fn(pred.unsqueeze(0), label_AS)
+            losses += [loss]
 
     mean_loss = torch.mean(torch.stack(losses)).item()
 
@@ -140,22 +141,22 @@ def finetune(args, dataloader_tr, dataloader_va, dataloader_test):
         print("Start validation...")
         model.eval()
 
-        val_loss, val_acc = eval(model=model, dataloader=dataloader_va, loss_fn=loss_fn, conf_AS=conf_AS)
+        val_loss, val_AS_acc = eval(model=model, dataloader=dataloader_va, loss_fn=loss_fn, conf_AS=conf_AS)
 
         if args.use_wandb:
-            wandb.log({"tr_loss":loss_avg, "val_loss":val_loss, "val_acc":val_acc})
+            wandb.log({"tr_loss":loss_avg, "val_loss":val_loss, "val_acc":val_AS_acc})
         
-        print(f"Epoch: {epoch}" f"Val Loss: {val_loss.item():.6f}\tVal Acc: {val_acc}", flush=True)
+        print(f"Epoch: {epoch}" f"Val Loss: {val_loss:.6f}\tVal Acc: {val_AS_acc}", flush=True)
 
         ## Evaluate on test set
         print("Start test...")
 
-        test_loss, test_acc = eval(model=model, dataloader=dataloader_test, loss_fn=loss_fn, conf_AS=conf_AS)
+        test_loss, test_AS_acc = eval(model=model, dataloader=dataloader_test, loss_fn=loss_fn, conf_AS=conf_AS)
 
         if args.use_wandb:
-            wandb.log({"test_loss":test_loss, "test_acc":test_acc})
+            wandb.log({"test_loss":test_loss, "test_acc":test_AS_acc})
         
-        print(f"Epoch: {epoch}" f"Test Loss: {test_loss.item():.6f}\tTest Acc: {test_acc}", flush=True)
+        print(f"Epoch: {epoch}" f"Test Loss: {test_loss:.6f}\tTest Acc: {test_AS_acc}", flush=True)
 
         ## Saving model
         if args.save is not None:
