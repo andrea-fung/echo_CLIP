@@ -9,28 +9,28 @@ def parse_arguments():
     parser.add_argument(
         "--num_workers",
         type=int,
-        default=0,
+        default=8,
         help="Number of workers for dataloader",
     )
 
     parser.add_argument(
         "--results-db",
         type=str,
-        default="/data/workspace/andrea/logs",
+        default="/workspace/echo_CLIP/logs",
         help="",
     )
 
     parser.add_argument(
         "--save",
         type=str,
-        default="/data/workspace/andrea/logs/finetuned_endtoend",
+        default="/workspace/echo_CLIP/logs/finetuned_endtoend",
         help="Optionally save a _classifier_, e.g. a zero shot classifier or probe.",
     )
 
     parser.add_argument(
         "--epochs",
         type=int,
-        default=40,
+        default=2,
     )
 
     parser.add_argument(
