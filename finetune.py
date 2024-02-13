@@ -175,7 +175,7 @@ if __name__ == '__main__':
 
     run_name = "echoclip_finetune_all"
     if args.use_wandb:
-        run = wandb.init(project="as_tab", entity="rcl_stroke", config = args, name = run_name)
+        run = wandb.init(project="as_tab", entity="rcl_stroke", config = args, name = run_name, dir=args.wandb_dir)
 
     dataloader_tr = get_img_dataloader(args, split='train', mode='train')
     dataloader_va = get_video_dataloader(args, split='val', mode='val')
