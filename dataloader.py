@@ -22,9 +22,9 @@ seed(42)
 torch.random.manual_seed(42)
 np.random.seed(42)
 
-img_path_dataset = '/workspace/as_tom_annotations-all.csv'
-tab_path_dataset = '/workspace/finetuned_df.csv'
-dataset_root = r"/workspace/as_tom" #r"/workspace/as_tom"
+img_path_dataset = '/data/workspace/andrea/as_tom_annotations-all.csv' #'/workspace/as_tom_annotations-all.csv'
+tab_path_dataset = '/data/workspace/andrea/finetuned_df.csv' #'/workspace/finetuned_df.csv'
+dataset_root = r"/data/workspace/andrea/as_tom" #r"/workspace/as_tom"
 cine_loader = 'mat_loader'
 
 # filter out pytorch user warnings for upsampling behaviour

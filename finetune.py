@@ -3,13 +3,15 @@
 import os
 import copy
 import time
-from tqdm import tqdm
 import numpy as np
 import wandb
 import torch
-
+import torch.nn as nn
+import torch.optim as optim
 import torch.nn.functional as F
 
+from pathlib import Path
+from tqdm import tqdm
 from sklearn.metrics import balanced_accuracy_score
 
 from args import parse_arguments
@@ -18,7 +20,6 @@ from models.modeling import ImageClassifier
 from models.utils import cosine_lr, torch_load, LabelSmoothing
 from utils import update_confusion_matrix, acc_from_confusion_matrix
 from dataloader import get_img_dataloader, get_video_dataloader
-from losses import ClipLoss
 
 def eval(model, dataloader, loss_fn, conf_AS):
     losses = []
@@ -55,11 +56,16 @@ def eval(model, dataloader, loss_fn, conf_AS):
     
     return mean_loss, acc_AS
 
-def finetune(args, dataloader_tr, dataloader_va, dataloader_test):
-    #assert args.load is not None, "Please provide the path to a checkpoint through --load."
-    #assert args.train_dataset is not None, "Please provide a training dataset."
+def finetune(args, dataloader_tr, dataloader_va, dataloader_test, run_name):
 
-    model = ImageClassifier(embed_dim_classhead=512)
+    if args.load is not None:
+        print("Loading checkpoint for EchoClip pretrained on private AS_tom dataset...")
+        model = ImageClassifier(embed_dim_classhead=512, dropout_prob=0.5)
+        checkpoint = torch.load(Path(args.load))
+        model.load_state_dict(checkpoint["model"], strict=False)
+    else:
+        print("Loading EchoClip...")
+        model = ImageClassifier(embed_dim_classhead=512, dropout_prob=0.5)
 
     if args.freeze_encoder:
         print('Finetuning classification head weights only')
@@ -101,21 +107,13 @@ def finetune(args, dataloader_tr, dataloader_va, dataloader_test):
             scheduler(step)
             optimizer.zero_grad()
 
-            cine, tab_data, labels_AS = batch
+            cine, _, labels_AS = batch
             cine = cine.squeeze(1)
             cine = cine.cuda()
-            ## tab_data = tab_data.cuda()
             labels_AS = labels_AS.cuda()
             data_time = time.time() - start_time
 
             image_embeds = F.normalize(model.image_encoder(cine), dim=-1) #[b, f, embed]
-
-            ## We'll use the CLIP BPE tokenizer to tokenize the prompts
-            tab_prompts = tokenize(tab_data).cuda()
-            ## Now we can encode the prompts into embeddings
-            tab_on = False
-            if tab_on:
-                tab_embeds = F.normalize(model.text_encoder(tab_prompts), dim=-1)
 
             preds = model.classification_head(image_embeds) #[b, 4]
             loss = loss_fn(preds, labels_AS) #uses mean reduction 
@@ -135,7 +133,8 @@ def finetune(args, dataloader_tr, dataloader_va, dataloader_test):
                     f"Loss: {loss.item():.6f}\tData (t) {data_time:.3f}\tBatch (t) {batch_time:.3f}", flush=True
                 )
 
-        loss_avg = torch.mean(torch.stack(losses)).item()
+        loss_avg = torch.mean(torch.stack(losses))
+        print(f"Loss for Train Epoch {epoch}: {loss_avg.item():.6f}")
 
         ## Evaluate on validation set
         print("Start validation...")
@@ -159,22 +158,24 @@ def finetune(args, dataloader_tr, dataloader_va, dataloader_test):
         print(f"Epoch: {epoch}" f"Test Loss: {test_loss:.6f}\tTest Acc: {test_AS_acc}", flush=True)
 
         ## Saving model
-        if args.save is not None:
-            os.makedirs(args.save, exist_ok=True)
-            model_path = os.path.join(args.save, f'checkpoint_{epoch+1}.pt')
+        if args.finetune_save is not None:
+            dir_path = os.path.join(args.finetune_save, run_name)
+            os.makedirs(dir_path, exist_ok=True)
+            model_path = os.path.join(dir_path, f'checkpoint_{epoch+1}.pt')
             print('Saving model to', model_path)
-            model.save(model_path)
-            optim_path = os.path.join(args.save, f'optim_{epoch+1}.pt')
-            torch.save(optimizer.state_dict(), optim_path)
+            torch.save({
+                'model': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict()
+                }, model_path)
 
-    if args.save is not None:
+    if args.finetune_save is not None:
         return model_path
 
 
 if __name__ == '__main__':
     args = parse_arguments() 
 
-    run_name = "echoclip_finetune_all"
+    run_name = "eclip_finetune_all_dropout"
     if args.use_wandb:
         run = wandb.init(project="as_tab", entity="rcl_stroke", config = args, name = run_name, dir=args.wandb_dir)
 
@@ -182,26 +183,9 @@ if __name__ == '__main__':
     dataloader_va = get_video_dataloader(args, split='val', mode='val')
     dataloader_test = get_video_dataloader(args, split='test', mode='val') 
      
-    finetune(args, dataloader_tr, dataloader_va, dataloader_test)
+    finetune(args, dataloader_tr, dataloader_va, dataloader_test, run_name)
 
     if args.use_wandb:
         wandb.finish()
 
 
-#CLIP loss 
-# clip_loss = ClipLoss(local_loss=args.local_loss,
-#                     gather_with_grad=args.gather_with_grad,
-#                     cache_labels=True,
-#                     rank=args.rank,
-#                     world_size=args.world_size,
-#                     use_horovod=args.horovod)
-# temperature = 1.0
-# logits = (tab_embeds @ video_embeds.T) / temperature
-# images_similarity = video_embeds @ video_embeds.T
-# texts_similarity = tab_embeds @ tab_embeds.T
-# targets = F.softmax(
-#     (images_similarity + texts_similarity) / 2 * temperature, dim=-1)
-# texts_loss = F.cross_entropy(logits, targets, reduction='none')
-# images_loss = F.cross_entropy(logits.T, targets.T, reduction='none')
-# loss =  (images_loss + texts_loss) / 2.0 # shape: (batch_size)
-# loss = loss.mean()

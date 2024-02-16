@@ -7,30 +7,43 @@ def parse_arguments():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "--num_workers",
-        type=int,
-        default=8,
-        help="Number of workers for dataloader",
+        "--load",
+        type=lambda x: x.split(","),
+        default=None, #"/data/workspace/andrea/logs/pretrained/eclip_pretrain/checkpoint_50.pt",
+        help="Optionally load _classifiers_, e.g. a zero shot classifier or probe or ensemble both.",
+    )
+
+    parser.add_argument(
+        "--finetune_save",
+        type=str,
+        default="/data/workspace/andrea/logs/finetuned_endtoend", #"/workspace/echo_CLIP/logs/finetuned_endtoend",
+        help="Optionally save a _classifier_, e.g. a zero shot classifier or probe.",
+    )
+
+    parser.add_argument(
+        "--pretrain_save",
+        type=str,
+        default="/data/workspace/andrea/logs/pretrained", #"/workspace/echo_CLIP/logs/pretrained",
+        help="Optionally save a _classifier_, e.g. a zero shot classifier or probe.",
     )
 
     parser.add_argument(
         "--results-db",
         type=str,
-        default="/workspace/echo_CLIP/logs",
+        default= "/data/workspace/andrea/logs", #"/workspace/echo_CLIP/logs",
         help="",
     )
 
     parser.add_argument(
-        "--save",
-        type=str,
-        default="/workspace/echo_CLIP/logs/finetuned_endtoend",
-        help="Optionally save a _classifier_, e.g. a zero shot classifier or probe.",
+        "--pretrain_epochs",
+        type=int,
+        default=50,
     )
 
     parser.add_argument(
         "--epochs",
         type=int,
-        default=2,
+        default=15,
     )
 
     parser.add_argument(
@@ -55,7 +68,7 @@ def parse_arguments():
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=1
+        default=8
     )
     
     parser.add_argument(
@@ -63,6 +76,13 @@ def parse_arguments():
         type=float,
         default=1e-5,
         help="Learning rate."
+    )
+
+    parser.add_argument(
+        "--num_workers",
+        type=int,
+        default=8,
+        help="Number of workers for dataloader",
     )
 
     parser.add_argument(
@@ -203,13 +223,6 @@ def parse_arguments():
         "--warmup_length",
         type=int,
         default=500, #TODO
-    )
-
-    parser.add_argument(
-        "--load",
-        type=lambda x: x.split(","),
-        default=None,
-        help="Optionally load _classifiers_, e.g. a zero shot classifier or probe or ensemble both.",
     )
     
     parser.add_argument(
