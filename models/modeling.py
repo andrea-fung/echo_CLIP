@@ -42,7 +42,7 @@ import models.utils as utils
 
 
 class ImageClassifier(torch.nn.Module):
-    def __init__(self, embed_dim_classhead, process_images=True):
+    def __init__(self, embed_dim_classhead, dropout_prob, process_images=True):
         super().__init__()
         self.model, self.train_preprocess, self.val_preprocess = create_model_and_transforms(
             "hf-hub:mkaichristensen/echo-clip", precision="float32", device="cuda")
@@ -57,6 +57,7 @@ class ImageClassifier(torch.nn.Module):
             nn.Linear(in_features=embed_dim_classhead, out_features=embed_dim_classhead//2, bias=True),
             nn.LayerNorm(embed_dim_classhead//2),
             nn.LeakyReLU(negative_slope=0.05, inplace=True),
+            nn.Dropout(dropout_prob),
             nn.Linear(in_features=embed_dim_classhead//2, out_features=4, bias=True))
 
     def forward(self, inputs):
