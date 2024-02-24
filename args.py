@@ -6,44 +6,123 @@ import torch
 def parse_arguments():
     parser = argparse.ArgumentParser()
 
+    ###tufts
+
+    parser.add_argument(
+        "--tufts_droot",
+        type=str,
+        default="/workspace/TMED/approved_users_only/"
+    )
+
+    parser.add_argument(
+        "--tufts_csv_name",
+        type=str,
+        default='DEV479/TMED2_fold0_labeledpart.csv'
+    )
+
+    parser.add_argument(
+        "--tufts_label_scheme_name",
+        type=str,
+        default='mod_severe'
+    )
+
+    parser.add_argument(
+        "--view_scheme_name",
+        type=str,
+        default='three_class'
+    )
+
+    parser.add_argument(
+        "--dataset",
+        type=str,
+        default="tufts",
+        help="",
+    )
+
+    ###general
+    parser.add_argument(
+        "--test_comprehensive",
+        type=str,
+        #default="/workspace/echo_CLIP/logs/finetuned_endtoend/eclip_pretrain_finetuned_4/checkpoint_8.pt",
+        default="/workspace/echo_CLIP/logs/finetuned_endtoend/eclip_pretrain_finetuned_5/checkpoint_8.pt",
+        #default=None,
+        help="Checkpoint of the model you want to test",
+    )
+
+    parser.add_argument(
+        "--tab_preprocess",
+        type=bool,
+        default=True,
+        help="",
+    )
+
+    parser.add_argument(
+        "--dataset_root",
+        type=str,
+        #default='/data/workspace/andrea/as_tom',
+        default=r"/workspace/as_tom",
+        help="",
+    )
+
+    parser.add_argument(
+        "--img_path_dataset",
+        type=str,
+        #default='/data/workspace/andrea/as_tom_annotations-all.csv',
+        default='/workspace/as_tom_annotations-all.csv',
+        help="",
+    )
+
+    parser.add_argument(
+        "--tab_path_dataset",
+        type=str,
+        #default='/data/workspace/andrea/finetuned_df.csv',
+        default='/workspace/finetuned_df.csv',
+        help="",
+    )
+
     parser.add_argument(
         "--load",
         type=lambda x: x.split(","),
-        default=None, #"/data/workspace/andrea/logs/pretrained/eclip_pretrain/checkpoint_50.pt",
+        #default="/workspace/echo_CLIP/logs/pretrained/eclip_pretrain_5/checkpoint_10.pt",
+        #default="/data/workspace/andrea/logs/pretrained/eclip_pretrain/checkpoint_17.pt",
+        default=None,
         help="Optionally load _classifiers_, e.g. a zero shot classifier or probe or ensemble both.",
     )
 
     parser.add_argument(
         "--finetune_save",
         type=str,
-        default="/data/workspace/andrea/logs/finetuned_endtoend", #"/workspace/echo_CLIP/logs/finetuned_endtoend",
+        #default="/data/workspace/andrea/logs/finetuned_endtoend", 
+        default="/workspace/echo_CLIP/logs/finetuned_endtoend",
         help="Optionally save a _classifier_, e.g. a zero shot classifier or probe.",
     )
 
     parser.add_argument(
         "--pretrain_save",
         type=str,
-        default="/data/workspace/andrea/logs/pretrained", #"/workspace/echo_CLIP/logs/pretrained",
+        #default="/data/workspace/andrea/logs/pretrained", 
+        default="/workspace/echo_CLIP/logs/pretrained",
         help="Optionally save a _classifier_, e.g. a zero shot classifier or probe.",
     )
 
     parser.add_argument(
         "--results-db",
         type=str,
-        default= "/data/workspace/andrea/logs", #"/workspace/echo_CLIP/logs",
+        #default= "/data/workspace/andrea/logs", 
+        default="/workspace/echo_CLIP/logs",
         help="",
     )
 
     parser.add_argument(
         "--pretrain_epochs",
         type=int,
-        default=50,
+        default=40,
     )
 
     parser.add_argument(
         "--epochs",
         type=int,
-        default=15,
+        default=20,
     )
 
     parser.add_argument(
@@ -62,13 +141,14 @@ def parse_arguments():
     parser.add_argument(
         "--wandb_dir",
         type=str,
-        default="/data/workspace/andrea"
+        default="/workspace/echo_CLIP"
+        #default="/data/workspace/andrea"
     )
 
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=8
+        default=16
     )
     
     parser.add_argument(
@@ -115,6 +195,7 @@ def parse_arguments():
         type=str,
         default='all'
     )
+
     # must be compatible with number of unique values in label scheme
     # will be automatic in future update
     # number of AS classes

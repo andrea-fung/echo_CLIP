@@ -564,3 +564,119 @@ def update_confusion_matrix(mat, true, pred):
 def acc_from_confusion_matrix(mat):
     # get accuracy from NxN confusion matrix
     return np.trace(mat)/np.sum(mat)
+
+def column_mapping(num, tab_col):
+    "Map the names and value of tabular column to corresponding standardized string"
+    #for the matching key, return the corresponding value.
+
+    map = {'AO.MG': ["Mean transvalvular gradient is", "mmHg."],
+    'AoPG': ["Peak transvalvular gradient is", "mmHg."],
+    'Rhythm': ["Patient has",
+                'normal rhythm.',
+                'normal rhythm.',
+                'ventricular premature beats.',
+                'sinus bradycardia.',
+                'atrial fibrillation.',
+                'sinus tachycardia.',
+                'paced rhythm.'],
+    'VPeak': ["Peak aortic velocity is", "m/s."],
+    'heart_rate': ["Heart rate is", "bpm."],
+    'age': ["Patient was", "years old."],
+    'Aortic Regurgitation': ["Patient has",
+                             "no aortic regurgitation.",
+                             "trivial aortic regurgitation.",
+                             "trivial-mild aortic regurgitation.",
+                             "mild aortic regurgitation.",
+                             "mild-mod aortic regurgitation.",
+                             "moderate aortic regurgitation.",
+                             "mod-severe aortic regurgitation.",
+                             "severe aortic regurgitation."],
+    'AVA': ["Aortic valve area is", "cm2."],
+    'BSA': ["BSA is", "m2."],
+    'LA': ["LA volume is", "mL/m2."],
+    'LV': ["LV is", 
+            'normal.', 
+            'mild.', 
+            'mild-mod.', 
+            'mod.', 
+            'mod-severe.', 
+            'severe.'], 
+    'LVMass': ["Left ventricle mass is", "g."],
+    'LVOV': ["LVOV is", "."],
+    'LVs': ["LVs is", "."], 
+    'Mitral Regurgitation': ["Patient has",
+                             "no mitral regurgitation.",
+                             "trivial mitral regurgitation.",
+                             "trivial-mild mitral regurgitation.",
+                             "mild mitral regurgitation.",
+                             "mild-mod mitral regurgitation.",
+                             "moderate mitral regurgitation.",
+                             "mod-severe mitral regurgitation.",
+                             "severe mitral regurgitation."],
+    'ROOT': ["ROOT is", "."],
+    'Bicuspid': ["Patient has bicuspid aortic valve."],
+    'Sclerotic': ["Patient has sclerotic aortic valve."],
+    'AV restricted': ["Patient has restricted aortic valve."],
+    'AV Thickening': ["Patient has thickened aortic valve."],
+    'AV Prosthetic': ["Patient has prosthetic aortic valve."],
+    'AV Calcified': ["Patient has sclerotic aortic valve."],
+    'AV Vegetation': ["Patient has vegetated aortic valve."],
+    'MV stenosis': ["Patient has stenotic mitral valve."],
+    'MV sam': ["There is SAM of the mitral valve."],
+    'MV restricted': ["Patient has restricted mitral valve."],
+    'MV tethered': ["Patient has tethered mitral valve."],
+    'RV Sys Func': ["Right ventricle systolic function is",
+                    "normal.", 
+                    "hyperdynamic."],
+    'RV Hypokinesis': ["Right ventricle",
+                        "is not hypokinetic.",
+                        "shows mild hypokinesis.",
+                        "shows mild-mod hypokinesis.",
+                        "shows moderate hypokinesis.",
+                        'shows mod-severe hypokinesis.',
+                        'shows severe hypokinesis.'],
+    'MV thickening': ["Patient has",
+                        "no mitral valve thickening.",
+                        "mild mitral valve thickening.",
+                        "moderate mitral valve thickening.",
+                        "severe mitral valve thickening."],
+    'MV prosthetic': ["Patient has prosthetic mitral valve."],
+    'MV vegetation': ["Patient has vegetated mitral valve."],
+    'RiskFactor_smoking': ["Patient", 
+                            'has never smoked.',
+                            'quit more than 5 years ago.',
+                            'is a smoker.'],
+    'High BP': ["Patient has high BP."],
+    'High Cholesterol': ["Patient has high cholesterol."],
+    'Diabetes': ["Patient has diabetes."]}
+ 
+    string_parts = map[tab_col]
+    if len(string_parts)==1:
+        if int(num)==1:
+            tab_string = string_parts[0]
+        else:
+            tab_string = None
+    elif len(string_parts)==2:
+        tab_string = " ".join([string_parts[0], str(num), string_parts[1]])
+    else:
+    #len > 2
+        tab_string = " ".join([string_parts[0], string_parts[int(num)+1]])
+
+    return tab_string
+
+def standardize_text(tab_numpy, tab_cols):
+
+    count=0
+    tab_strings = []
+    for num in tab_numpy:
+        if np.isnan(num) or num==-1:
+            pass
+        else:
+            tab_col = tab_cols[count]
+            tab_string = column_mapping(num, tab_col)
+            if tab_string is not None:
+                tab_strings.append(tab_string)
+        count+=1
+    text = " ".join(tab_strings)
+
+    return text

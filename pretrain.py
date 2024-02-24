@@ -17,11 +17,16 @@ from models.utils import cosine_lr
 from dataloader import get_img_dataloader
 from losses import ClipLoss
 
+from open_clip import create_model_and_transforms
+
 def pretrain(args, dataloader_tr, dataloader_val, run_name, init_logit_scale=np.log(1 / 0.07)):
     #assert args.load is not None, "Please provide the path to a checkpoint through --load."
     #assert args.train_dataset is not None, "Please provide a training dataset."
 
     model = ImageClassifier(embed_dim_classhead=512, dropout_prob=0.5)
+
+    for param in model.parameters():
+        param.requires_grad = True
     
     print_every = 1000
     num_batches = len(dataloader_tr)
@@ -45,7 +50,7 @@ def pretrain(args, dataloader_tr, dataloader_val, run_name, init_logit_scale=np.
             scheduler(step)
             optimizer.zero_grad()
 
-            cine, tab_data, labels_AS = batch
+            cine, tab_data, labels_AS, _ = batch
             cine = cine.squeeze(1)
             cine = cine.cuda()
             tab_data = tab_data #str input
@@ -88,7 +93,7 @@ def pretrain(args, dataloader_tr, dataloader_val, run_name, init_logit_scale=np.
 
         with torch.set_grad_enabled(False):
             val_losses = []
-            for cine, tab_data, labels_AS in tqdm(dataloader_val):
+            for cine, tab_data, labels_AS, _ in tqdm(dataloader_val):
                 ## count+=1
                 cine = cine.squeeze(1)
                 cine = cine.cuda()
@@ -128,7 +133,7 @@ def pretrain(args, dataloader_tr, dataloader_val, run_name, init_logit_scale=np.
 if __name__ == '__main__':
     args = parse_arguments() 
 
-    run_name = "eclip_pretrain"
+    run_name = "eclip_debug"
     if args.use_wandb:
         run = wandb.init(project="as_tab", entity="rcl_stroke", config = args, name = run_name, dir=args.wandb_dir)
 

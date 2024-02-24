@@ -67,14 +67,14 @@ class ImageClassifier(torch.nn.Module):
 
         return outputs
 
-    def save(self, filename):
-        print(f'Saving image classifier to {filename}')
-        utils.torch_save(self, filename)
+    # def save(self, filename):
+    #     print(f'Saving image classifier to {filename}')
+    #     utils.torch_save(self, filename)
 
-    @classmethod
-    def load(cls, filename):
-        print(f'Loading image classifier from {filename}')
-        return utils.torch_load(filename)
+    # @classmethod
+    # def load(cls, filename):
+    #     print(f'Loading image classifier from {filename}')
+    #     return utils.torch_load(filename)
 
 # if __name__ == '__main__':
 #     #run image encoder and save to filename
