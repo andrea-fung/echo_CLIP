@@ -5,6 +5,7 @@ from typing import List, Dict, Union#, Optional, Callable, Iterable
 import numpy as np
 import pandas as pd
 import torch
+import matplotlib.pyplot as plt
 from scipy.io import loadmat
 from skimage.transform import resize
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
@@ -16,15 +17,12 @@ from random import lognormvariate
 from random import seed
 import torch.nn as nn
 import random
-from utils import load_as_data, preprocess_as_data, fix_leakage
+from utils import load_as_data, preprocess_as_data, fix_leakage, standardize_text
 
 seed(42)
 torch.random.manual_seed(42)
 np.random.seed(42)
 
-img_path_dataset = '/data/workspace/andrea/as_tom_annotations-all.csv' #'/workspace/as_tom_annotations-all.csv'
-tab_path_dataset = '/data/workspace/andrea/finetuned_df.csv' #'/workspace/finetuned_df.csv'
-dataset_root = r"/data/workspace/andrea/as_tom" #r"/workspace/as_tom"
 cine_loader = 'mat_loader'
 
 # filter out pytorch user warnings for upsampling behaviour
@@ -33,8 +31,9 @@ warnings.filterwarnings("ignore", category=UserWarning)
 # for now, this only gets the matlab array loader
 # Dict is a lookup table and can be expanded to add mpeg loader, etc
 # returns a function
+
 def get_loader(loader_name):
-    loader_lookup_table = {'mat_loader': mat_loader}
+    loader_lookup_table = {'mat_loader': mat_loader, 'png_loader': png_loader}
     return loader_lookup_table[loader_name]
 
 def mat_loader(path):
@@ -44,6 +43,23 @@ def mat_loader(path):
     if 'cropped' in mat.keys():    
         return loadmat(path)['cropped']
 
+def png_loader(path):
+    return plt.imread(path)
+
+tufts_label_schemes: Dict[str, Dict[str, Union[int, float]]] = {
+    'binary': {'no_AS': 0, 'mild_AS': 1, 'mildtomod_AS': 1, 'moderate_AS': 1, 'severe_AS': 1},
+    'mild_mod': {'no_AS': 0, 'mild_AS': 1, 'mildtomod_AS': 1, 'moderate_AS': 2, 'severe_AS': 2},
+    'mod_severe': {'no_AS': 0, 'mild_AS': 1, 'mildtomod_AS': 1, 'moderate_AS': 1, 'severe_AS': 2},
+    'four_class': {'no_AS': 0, 'mild_AS': 1, 'mildtomod_AS': 1, 'moderate_AS': 2, 'severe_AS': 3},
+    'five_class': {'no_AS': 0, 'mild_AS': 1, 'mildtomod_AS': 2, 'moderate_AS': 3, 'severe_AS': 4},
+}
+
+view_scheme = {'PLAX':0, 'PSAX':1, 'A2C':2, 'A4C':3, 'A4CorA2CorOther':4}
+view_schemes: Dict[str, Dict[str, Union[int, float]]] = {
+    'three_class': {'PLAX':0, 'PSAX':1, 'A2C':2, 'A4C':2, 'A4CorA2CorOther':2},
+    'four_class': {'PLAX':0, 'PSAX':1, 'A2C':2, 'A4C':2, 'A4CorA2CorOther':3},
+    'five_class': {'PLAX':0, 'PSAX':1, 'A2C':2, 'A4C':3, 'A4CorA2CorOther':4},
+}
 
 label_schemes: Dict[str, Dict[str, Union[int, float]]] = {
     'binary': {'normal': 0.0, 'mild': 1.0, 'moderate': 1.0, 'severe': 1.0},
@@ -53,6 +69,7 @@ label_schemes: Dict[str, Dict[str, Union[int, float]]] = {
     'mild_moderate': {'mild': 0, 'moderate': 1},
     'moderate_severe': {'moderate': 0, 'severe': 1}
 }
+
 class_labels: Dict[str, List[str]] = {
     'binary': ['Normal', 'AS'],
     'all': ['Normal', 'Mild', 'Moderate', 'Severe'],
@@ -98,11 +115,11 @@ def get_video_dataloader(args, split, mode):
     bsize = 1
     
     # read in the data directory CSV as a pandas dataframe
-    raw_dataset = pd.read_csv(img_path_dataset)
-    dataset = pd.read_csv(img_path_dataset)
+    raw_dataset = pd.read_csv(args.img_path_dataset)
+    dataset = pd.read_csv(args.img_path_dataset)
         
     # append dataset root to each path in the dataframe
-    dataset['path'] = dataset['path'].map(lambda x: join(dataset_root, x))
+    dataset['path'] = dataset['path'].map(lambda x: join(args.dataset_root, x))
     view = args.view
         
     if view in ('plax', 'psax'):
@@ -116,15 +133,21 @@ def get_video_dataloader(args, split, mode):
     dataset = dataset[dataset['as_label'].isin( scheme.keys() )]
 
     #load tabular dataset
-    tab_train, tab_val, tab_test = load_as_data(csv_path = tab_path_dataset,
+    tab_train, tab_val, tab_test = load_as_data(csv_path = args.tab_path_dataset,
                                                 drop_cols = args.drop_cols,
                                                 num_ex = None,
                                                 scale_feats = args.scale_feats)
                                                 
 
     #perform imputation 
-    train_set, val_set, test_set, all_cols = preprocess_as_data(tab_train, tab_val, tab_test, args.categorical_cols)
-    
+    if args.tab_preprocess:
+        train_set, val_set, test_set, all_cols = preprocess_as_data(tab_train, tab_val, tab_test, args.categorical_cols)
+    else: 
+        train_set = tab_train.drop("as_label", axis=1)
+        val_set = tab_val.drop("as_label", axis=1)
+        test_set = tab_test.drop("as_label", axis=1)
+        all_cols = train_set.columns.to_list()
+        
     # Take train/test/val
     if split in ('train', 'val', 'test'):
         dataset = dataset[dataset['split'] == split]
@@ -145,9 +168,11 @@ def get_video_dataloader(args, split, mode):
     elif split == 'test':
         dataset = fix_leakage(df=raw_dataset, df_subset=dataset, split=split)
         
-    dset = AorticStenosisDataset(video=True,
+    dset = AorticStenosisDataset(args=args,
+                                video=False,
                                 img_path_dataset=dataset, 
                                 tab_dataset=tab_dataset,
+                                tab_cols=all_cols,
                                 split=split,
                                 transform=tra,
                                 normalize=True,
@@ -163,7 +188,7 @@ def get_video_dataloader(args, split, mode):
         else: # random sampling
             loader = DataLoader(dset, batch_size=bsize, shuffle=True, num_workers=args.num_workers)
     else:
-        loader = DataLoader(dset, batch_size=bsize, shuffle=True, num_workers=args.num_workers)
+        loader = DataLoader(dset, batch_size=bsize, shuffle=False, num_workers=args.num_workers)
     return loader
 
 def get_img_dataloader(args, split, mode='train'):
@@ -184,33 +209,37 @@ def get_img_dataloader(args, split, mode='train'):
     bsize = args.batch_size
     
     # read in the data directory CSV as a pandas dataframe
-    raw_dataset = pd.read_csv(img_path_dataset)
-    dataset = pd.read_csv(img_path_dataset)
+    raw_dataset = pd.read_csv(args.img_path_dataset)
+    dataset = pd.read_csv(args.img_path_dataset)
         
     # append dataset root to each path in the dataframe
-    dataset['path'] = dataset['path'].map(lambda x: join(dataset_root, x))
+    dataset['path'] = dataset['path'].map(lambda x: join(args.dataset_root, x))
     view = args.view
         
     if view in ('plax', 'psax'):
         dataset = dataset[dataset['view'] == view]
     elif view != 'all':
         raise ValueError(f'View should be plax, psax or all, got {view}')
-       
+    
     # remove unnecessary columns in 'as_label' based on label scheme
     label_scheme_name = args.label_scheme_name
     scheme = label_schemes[label_scheme_name]
-    dataset = dataset[dataset['as_label'].isin( scheme.keys() )]
 
     #load tabular dataset
-    tab_train, tab_val, tab_test = load_as_data(csv_path = tab_path_dataset,
+    tab_train, tab_val, tab_test = load_as_data(csv_path = args.tab_path_dataset,
                                                 drop_cols = args.drop_cols,
                                                 num_ex = None,
                                                 scale_feats = args.scale_feats)
                                                 
 
     #perform imputation 
-    train_set, val_set, test_set, all_cols = preprocess_as_data(tab_train, tab_val, tab_test, args.categorical_cols)
-    
+    if args.tab_preprocess:
+        train_set, val_set, test_set, all_cols = preprocess_as_data(tab_train, tab_val, tab_test, args.categorical_cols)
+    else: 
+        train_set = tab_train.drop("as_label", axis=1)
+        val_set = tab_val.drop("as_label", axis=1)
+        test_set = tab_test.drop("as_label", axis=1)
+        all_cols = train_set.columns.to_list()
     # Take train/test/val
     if split in ('train', 'val', 'test'):
         dataset = dataset[dataset['split'] == split]
@@ -231,9 +260,11 @@ def get_img_dataloader(args, split, mode='train'):
     elif split == 'test':
         dataset = fix_leakage(df=raw_dataset, df_subset=dataset, split=split)
     
-    dset = AorticStenosisDataset(video=False,
+    dset = AorticStenosisDataset(args=args,
+                                video=False,
                                 img_path_dataset=dataset, 
                                 tab_dataset=tab_dataset,
+                                tab_cols=all_cols,
                                 split=split,
                                 transform=tra,
                                 normalize=True,
@@ -249,16 +280,54 @@ def get_img_dataloader(args, split, mode='train'):
         else: # random sampling
             loader = DataLoader(dset, batch_size=bsize, shuffle=True, num_workers=args.num_workers)
     else:
-        loader = DataLoader(dset, batch_size=bsize, shuffle=True, num_workers=args.num_workers)
+        loader = DataLoader(dset, batch_size=bsize, shuffle=False, num_workers=args.num_workers)
+    return loader
+
+def get_tufts_dataloader(args, split, mode='train'):
+    
+    if mode=='train':
+        flip = 0.5
+        tra = True
+        bsize = args.batch_size 
+        patient_info = False
+    elif mode=='val':
+        flip = 0.0
+        tra = False
+        bsize = args.batch_size 
+        patient_info = False
+    elif mode=='test':
+        flip = 0.0
+        tra = False
+        bsize = 1
+        patient_info = True
+        
+    dset = TMEDDataset(args=args,
+                       dataset_root=args.tufts_droot, 
+                        split=split,
+                        view=args.view,
+                        transform=tra,
+                        normalize=True,
+                        flip_rate=flip,
+                        patient_info = patient_info, 
+                        label_scheme_name=args.tufts_label_scheme_name,
+                        view_scheme_name=args.view_scheme_name
+                         )
+    
+    if mode=='train':
+        loader = DataLoader(dset, batch_size=bsize, shuffle=True)
+    else:
+        loader = DataLoader(dset, batch_size=bsize, shuffle=False)
     return loader
 
 
 class AorticStenosisDataset(Dataset):
     def __init__(self, 
+                 args,
                  video,
                  label_scheme,
                  img_path_dataset,
                  tab_dataset,
+                 tab_cols,
                  split: str = 'train',
                  transform: bool = True, normalize: bool = True, 
                  frames: int = 16, resolution: int = 224,
@@ -276,6 +345,8 @@ class AorticStenosisDataset(Dataset):
         self.cine_loader = get_loader(cine_loader)
         self.dataset = img_path_dataset
         self.tab_dataset = tab_dataset
+        self.tab_preprocess = args.tab_preprocess
+        self.tab_cols = tab_cols
         self.frames = frames
         self.resolution = (resolution, resolution)
         self.split = split
@@ -334,7 +405,10 @@ class AorticStenosisDataset(Dataset):
     
     def tab_to_text(self, tab_numpy):
         #text = ["%.2f" % num for num in tab_numpy.tolist()]
-        text = ','.join(['{:.2f}'.format(num) for num in tab_numpy])
+        if self.tab_preprocess:
+            text = ','.join(['{:.2f}'.format(num) for num in tab_numpy])
+        else:
+            text = standardize_text(tab_numpy, self.tab_cols)
         return text
 
     def __getitem__(self, item):
@@ -383,6 +457,156 @@ class AorticStenosisDataset(Dataset):
         cine = self.gray_to_gray3(cine)
         cine = cine.float()
         
-        ret = (cine, tab_info, labels_AS)
+        ret = (cine, tab_info, labels_AS, study_num)
         
         return ret
+
+class TMEDDataset(Dataset):
+    def __init__(self, 
+                 args,
+                 dataset_root: str = '~/as',
+                 view: str = 'PLAX', # PLAX/PSAX/PLAXPSAX/no_other/all
+                 split: str = 'all', # train/val/test/'all'
+                 transform: bool = True, 
+                 normalize: bool = False, 
+                 resolution: int = 224,
+                 image_loader: str = 'png_loader', 
+                 flip_rate: float = 0.5,  
+                 patient_info: bool = False,
+                 label_scheme_name: str = 'all', # see above
+                 view_scheme_name: str = 'three_class',
+                 **kwargs):
+        # navigation for linux environment
+        self.dataset_root = dataset_root
+        
+        # read in the data directory CSV as a pandas dataframe
+        dataset = pd.read_csv(join(args.tufts_droot, args.tufts_csv_name)) 
+        # append dataset root to each path in the dataframe
+        dataset['path'] = dataset.apply(self.get_data_path_rowwise, axis=1)
+        
+        if view in ('PLAX', 'PSAX'):
+            dataset = dataset[dataset['view_label'] == view]
+        elif view == 'plaxpsax':
+            dataset = dataset[dataset['view_label'].isin(['PLAX', 'PSAX'])]
+        elif view == 'no_other':
+            dataset = dataset[dataset['view_label'] != 'A4CorA2CorOther']
+        elif view != 'all':
+            raise ValueError(f'View should be PLAX/PSAX/PLAXPSAX/no_other/all, got {view}')
+       
+        # remove unnecessary columns in 'as_label' based on label scheme
+        self.scheme = tufts_label_schemes[label_scheme_name]
+        self.scheme_view = view_schemes[view_scheme_name]
+        dataset = dataset[dataset['diagnosis_label'].isin( self.scheme.keys() )]
+
+        self.image_loader = get_loader(image_loader)
+        self.patient_info = patient_info
+
+        # Take train/test/val
+        if split in ('train', 'val', 'test'):
+            dataset = dataset[dataset['diagnosis_classifier_split'] == split]
+        elif split != 'all':
+            raise ValueError(f'View should be train/val/test/all, got {split}')
+
+        self.dataset = dataset
+        self.resolution = (resolution, resolution)
+
+        self.transform = None
+        if transform:
+            self.transform = Compose(
+                [RandomResizedCrop(size=self.resolution, scale=(0.8, 1)),
+                 RandomHorizontalFlip(p=flip_rate)]
+            )
+        self.normalize = normalize
+        
+    def __len__(self) -> int:
+        return len(self.dataset)
+
+    # get a dataset path from the TMED2 CSV row
+    def get_data_path_rowwise(self, pdrow):
+        path = join(self.dataset_root, pdrow['SourceFolder'], pdrow['query_key'])
+        return path
+
+    def get_random_interval(self, vid, length):
+        length = int(length)
+        start = randint(0, max(0, len(vid) - length))
+        return vid[start:start + length]
+    
+    # expands one channel to 3 color channels, useful for some pretrained nets
+    def gray_to_gray3(self, in_tensor):
+        # in_tensor is 1xTxHxW
+        return in_tensor.expand(3, -1, -1)
+    
+    # normalizes pixels based on pre-computed mean/std values
+    def bin_to_norm(self, in_tensor):
+        # in_tensor is 1xTxHxW
+        m = 0.061
+        std = 0.140
+        return (in_tensor-m)/std
+    
+    def _get_image(self, data_info):
+        '''
+        General method to get an image and apply tensor transformation to it
+
+        Parameters
+        ----------
+        data_info : ID of the item to retrieve (based on the position in the dataset)
+            DESCRIPTION.
+
+        Returns
+        -------
+        ret : size 3xTxHxW tensor representing image
+            if return_info is true, also returns metadata
+
+        '''
+
+        img_original = self.image_loader(data_info['path'])
+        
+        img = resize(img_original, self.resolution) # HxW
+        x = torch.tensor(img).unsqueeze(0) # 1xHxW
+        
+        y_view = torch.tensor(self.scheme_view[data_info['view_label']])
+        y_AS = torch.tensor(self.scheme[data_info['diagnosis_label']])
+
+        if self.transform:
+            x = self.transform(x)
+        if self.normalize:
+            x = self.bin_to_norm(x)
+
+        x = self.gray_to_gray3(x)
+        x = x.float() # 3xHxW
+        
+        ret = {'x':x, 'y_AS':y_AS, 'y_view':y_view}
+        
+        if self.patient_info:
+            p_id = data_info['query_key'].split('_')[0]
+            ret = {'x':x, 'y_AS':y_AS, 'y_view':y_view, 'p_id': p_id}
+        
+        return ret
+
+    def __getitem__(self, item):
+        data_info = self.dataset.iloc[item]
+        return self._get_image(data_info)
+    
+    def tensorize_single_image(self, img_path):
+        """
+        Creates a video tensor that is consistent with config specifications
+    
+        Parameters
+        ----------
+        img_path : String
+            the path to the image, the function will find matches of the path substring
+    
+        Returns
+        -------
+        see get_item_from_info
+    
+        """
+        # look for a path in the dataset resembling the video path
+        matches_boolean = self.dataset['path'].str.contains(img_path)
+        found_entries=self.dataset[matches_boolean]
+        if len(found_entries) == 0:
+            raise ValueError('Found 0 matches for requested substring ' + img_path)
+        elif len(found_entries) > 1:
+            warnings.warn('Found multiple matches, returning first result')
+        data_info = found_entries.iloc[0]
+        return self._get_item_from_info(data_info)
