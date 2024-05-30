@@ -356,10 +356,6 @@ def remove_ids(remove_ids, dataset):
 
 #utils from tabular transformer finetuning branch
 def preprocess_as_data(train, val, test, cat_cols):
-
-    #train = train.replace(-1, np.nan)
-    #val = val.replace(-1, np.nan)
-    #test = test.replace(-1, np.nan)
     
     # Remove non numerical features
     numeric_feats = train.columns.to_list().copy()
@@ -402,23 +398,11 @@ def preprocess_as_data(train, val, test, cat_cols):
     val_impute = pd.DataFrame(processor2.transform(val_temp), columns=all_columns, index=val.index)
     test_impute = pd.DataFrame(processor2.transform(test_temp), columns=all_columns, index=test.index)
 
-    # train = train.replace(np.nan, -1)
-    # val = val.replace(np.nan, -1)
-    # test = test.replace(np.nan, -1)
-
-    # create a dataset with each of these
-    # train_set = ASDataset(train, train_impute, all_columns)
-    # val_set = ASDataset(val, val_impute, all_columns)
-    # test_set = ASDataset(test, test_impute, all_columns)
-
     return (train_impute, val_impute, test_impute, all_columns)
 
 def load_as_data(csv_path: str,
-                    drop_cols : Union[List[str], None] = None,
-                    num_ex : Union[int, None] = None,
                     test_split : float = 0.1,
-                    random_seed : Union[int, None] = None,
-                    scale_feats : bool = True
+                    random_seed : Union[int, None] = None
                     ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: 
         """Processes data for imputation models.
 
@@ -427,55 +411,22 @@ def load_as_data(csv_path: str,
         
         Args:
             csv_path: Path to the dataset to use. Should be a csv file.
-            drop_cols: List of columns to drop from dataset. If None, no columns are dropped.
-            num_ex: Number of examples to use. If None, will use all available examples.
             test_split: What fraction of total data to use in test set. Also used to split
                 validation data after test data has been separated.
             random_seed: Seed to initialize randomized operations.
-            scale_feats: Whether to scale numeric features in dataset during preprocessing.
 
         Returns:
             Tuple of (train_dataset, validation_dataset, test_dataset).
             Each is a processed pandas DataFrame.
-
-        Raises:
-            Exception: Specified more examples to use than exist in the dataset.
         """
 
         data_df = pd.read_csv(csv_path, index_col=0)
-        data_df = data_df.drop("AV stenosis", axis=1)
-        #data_df = data_df.drop("age", axis=1)
-
-        #If num_ex is None use all examples in dataset
-        if not num_ex:
-            num_ex = data_df.shape[0]
-
-        #Ensure number of examples specified is not greater than examples in the dataset
-        elif num_ex > data_df.shape[0]:
-            ex_string = "Specified " + str(num_ex) + " examples to use but there are only " + str(nan_df.shape[0]) + " examples with known target column in dataset."
-            raise Exception(ex_string)
-        
-
-        #Create description of processing and store
-        print("Processing data from: " + csv_path + "\n")
-        print("Dropping the following columns: " + str(drop_cols) + "\n")
-        print("Using " + str(num_ex) + " examples with test split of " + str(test_split) + ".\n")
-        print("Random seed is " + str(random_seed) + ".\n")
-        print("Scaling features? " + str(scale_feats) + "\n")
-
-        #Replace any -1 values with NaNs for imputing
-        #nan_df = data_df.replace(-1, np.nan)
-        
-        #Sample data to only contain num_ex rows
-        sampled_df = data_df.sample(n=num_ex, random_state=random_seed)
-
-        #If drop columns is not empty, drop specified. Otherwise keep DataFrame as is
-        drop_cols_df = sampled_df.drop(columns=drop_cols) if drop_cols else sampled_df
+        data_df.set_index("Echo ID#", inplace=True)
 
         #Split into train, test, and validation sets
-        train_df = drop_cols_df[drop_cols_df['split'] == 'train'].drop(columns=['split'])
-        val_df = drop_cols_df[drop_cols_df['split'] == 'val'].drop(columns=['split'])
-        test_df = drop_cols_df[drop_cols_df['split'] == 'test'].drop(columns=['split'])
+        train_df = data_df[data_df['split'] == 'train'].drop(columns=['split'])
+        val_df = data_df[data_df['split'] == 'val'].drop(columns=['split'])
+        test_df = data_df[data_df['split'] == 'test'].drop(columns=['split'])
 
         print("\nTrain dataset shape:", train_df.shape)
         print("Validation dataset shape:", val_df.shape)
@@ -565,118 +516,102 @@ def acc_from_confusion_matrix(mat):
     # get accuracy from NxN confusion matrix
     return np.trace(mat)/np.sum(mat)
 
-def column_mapping(num, tab_col):
-    "Map the names and value of tabular column to corresponding standardized string"
-    #for the matching key, return the corresponding value.
+# def column_mapping(num, tab_col):
+#     "Map the names and value of tabular column to corresponding standardized string"
+#     #for the matching key, return the corresponding value.
 
-    map = {'AO.MG': ["Mean transvalvular gradient is", "mmHg."],
-    'AoPG': ["Peak transvalvular gradient is", "mmHg."],
-    'Rhythm': ["Patient has",
-                'normal rhythm.',
-                'normal rhythm.',
-                'ventricular premature beats.',
-                'sinus bradycardia.',
-                'atrial fibrillation.',
-                'sinus tachycardia.',
-                'paced rhythm.'],
-    'VPeak': ["Peak aortic velocity is", "m/s."],
-    'heart_rate': ["Heart rate is", "bpm."],
-    'age': ["Patient was", "years old."],
-    'Aortic Regurgitation': ["Patient has",
-                             "no aortic regurgitation.",
-                             "trivial aortic regurgitation.",
-                             "trivial-mild aortic regurgitation.",
-                             "mild aortic regurgitation.",
-                             "mild-mod aortic regurgitation.",
-                             "moderate aortic regurgitation.",
-                             "mod-severe aortic regurgitation.",
-                             "severe aortic regurgitation."],
-    'AVA': ["Aortic valve area is", "cm2."],
-    'BSA': ["BSA is", "m2."],
-    'LA': ["LA volume is", "mL/m2."],
-    'LV': ["LV is", 
-            'normal.', 
-            'mild.', 
-            'mild-mod.', 
-            'mod.', 
-            'mod-severe.', 
-            'severe.'], 
-    'LVMass': ["Left ventricle mass is", "g."],
-    'LVOV': ["LVOV is", "."],
-    'LVs': ["LVs is", "."], 
-    'Mitral Regurgitation': ["Patient has",
-                             "no mitral regurgitation.",
-                             "trivial mitral regurgitation.",
-                             "trivial-mild mitral regurgitation.",
-                             "mild mitral regurgitation.",
-                             "mild-mod mitral regurgitation.",
-                             "moderate mitral regurgitation.",
-                             "mod-severe mitral regurgitation.",
-                             "severe mitral regurgitation."],
-    'ROOT': ["ROOT is", "."],
-    'Bicuspid': ["Patient has bicuspid aortic valve."],
-    'Sclerotic': ["Patient has sclerotic aortic valve."],
-    'AV restricted': ["Patient has restricted aortic valve."],
-    'AV Thickening': ["Patient has thickened aortic valve."],
-    'AV Prosthetic': ["Patient has prosthetic aortic valve."],
-    'AV Calcified': ["Patient has sclerotic aortic valve."],
-    'AV Vegetation': ["Patient has vegetated aortic valve."],
-    'MV stenosis': ["Patient has stenotic mitral valve."],
-    'MV sam': ["There is SAM of the mitral valve."],
-    'MV restricted': ["Patient has restricted mitral valve."],
-    'MV tethered': ["Patient has tethered mitral valve."],
-    'RV Sys Func': ["Right ventricle systolic function is",
-                    "normal.", 
-                    "hyperdynamic."],
-    'RV Hypokinesis': ["Right ventricle",
-                        "is not hypokinetic.",
-                        "shows mild hypokinesis.",
-                        "shows mild-mod hypokinesis.",
-                        "shows moderate hypokinesis.",
-                        'shows mod-severe hypokinesis.',
-                        'shows severe hypokinesis.'],
-    'MV thickening': ["Patient has",
-                        "no mitral valve thickening.",
-                        "mild mitral valve thickening.",
-                        "moderate mitral valve thickening.",
-                        "severe mitral valve thickening."],
-    'MV prosthetic': ["Patient has prosthetic mitral valve."],
-    'MV vegetation': ["Patient has vegetated mitral valve."],
-    'RiskFactor_smoking': ["Patient", 
-                            'has never smoked.',
-                            'quit more than 5 years ago.',
-                            'is a smoker.'],
-    'High BP': ["Patient has high BP."],
-    'High Cholesterol': ["Patient has high cholesterol."],
-    'Diabetes': ["Patient has diabetes."]}
+#     map = {'AO.MG': ["Mean transvalvular gradient is", "mmHg."],
+#     'AoPG': ["Peak transvalvular gradient is", "mmHg."],
+#     'Rhythm': ["Patient has",
+#                 'normal rhythm.',
+#                 'normal rhythm.',
+#                 'ventricular premature beats.',
+#                 'sinus bradycardia.',
+#                 'atrial fibrillation.',
+#                 'sinus tachycardia.',
+#                 'paced rhythm.'],
+#     'VPeak': ["Peak aortic velocity is", "m/s."],
+#     'heart_rate': ["Heart rate is", "bpm."],
+#     'age': ["Patient was", "years old."],
+#     'Aortic Regurgitation': ["Patient has",
+#                              "no aortic regurgitation.",
+#                              "trivial aortic regurgitation.",
+#                              "trivial-mild aortic regurgitation.",
+#                              "mild aortic regurgitation.",
+#                              "mild-mod aortic regurgitation.",
+#                              "moderate aortic regurgitation.",
+#                              "mod-severe aortic regurgitation.",
+#                              "severe aortic regurgitation."],
+#     'AVA': ["Aortic valve area is", "cm2."],
+#     'BSA': ["BSA is", "m2."],
+#     'LA': ["LA volume is", "mL/m2."],
+#     'LV': ["LV is", 
+#             'normal.', 
+#             'mild.', 
+#             'mild-mod.', 
+#             'mod.', 
+#             'mod-severe.', 
+#             'severe.'], 
+#     'LVMass': ["Left ventricle mass is", "g."],
+#     'LVOV': ["LVOV is", "."],
+#     'LVs': ["LVs is", "."], 
+#     'Mitral Regurgitation': ["Patient has",
+#                              "no mitral regurgitation.",
+#                              "trivial mitral regurgitation.",
+#                              "trivial-mild mitral regurgitation.",
+#                              "mild mitral regurgitation.",
+#                              "mild-mod mitral regurgitation.",
+#                              "moderate mitral regurgitation.",
+#                              "mod-severe mitral regurgitation.",
+#                              "severe mitral regurgitation."],
+#     'ROOT': ["ROOT is", "."],
+#     'Bicuspid': ["Patient has bicuspid aortic valve."],
+#     'Sclerotic': ["Patient has sclerotic aortic valve."],
+#     'AV restricted': ["Patient has restricted aortic valve."],
+#     'AV Thickening': ["Patient has thickened aortic valve."],
+#     'AV Prosthetic': ["Patient has prosthetic aortic valve."],
+#     'AV Calcified': ["Patient has sclerotic aortic valve."],
+#     'AV Vegetation': ["Patient has vegetated aortic valve."],
+#     'MV stenosis': ["Patient has stenotic mitral valve."],
+#     'MV sam': ["There is SAM of the mitral valve."],
+#     'MV restricted': ["Patient has restricted mitral valve."],
+#     'MV tethered': ["Patient has tethered mitral valve."],
+#     'RV Sys Func': ["Right ventricle systolic function is",
+#                     "normal.", 
+#                     "hyperdynamic."],
+#     'RV Hypokinesis': ["Right ventricle",
+#                         "is not hypokinetic.",
+#                         "shows mild hypokinesis.",
+#                         "shows mild-mod hypokinesis.",
+#                         "shows moderate hypokinesis.",
+#                         'shows mod-severe hypokinesis.',
+#                         'shows severe hypokinesis.'],
+#     'MV thickening': ["Patient has",
+#                         "no mitral valve thickening.",
+#                         "mild mitral valve thickening.",
+#                         "moderate mitral valve thickening.",
+#                         "severe mitral valve thickening."],
+#     'MV prosthetic': ["Patient has prosthetic mitral valve."],
+#     'MV vegetation': ["Patient has vegetated mitral valve."],
+#     'RiskFactor_smoking': ["Patient", 
+#                             'has never smoked.',
+#                             'quit more than 5 years ago.',
+#                             'is a smoker.'],
+#     'High BP': ["Patient has high BP."],
+#     'High Cholesterol': ["Patient has high cholesterol."],
+#     'Diabetes': ["Patient has diabetes."]}
  
-    string_parts = map[tab_col]
-    if len(string_parts)==1:
-        if int(num)==1:
-            tab_string = string_parts[0]
-        else:
-            tab_string = None
-    elif len(string_parts)==2:
-        tab_string = " ".join([string_parts[0], str(num), string_parts[1]])
-    else:
-    #len > 2
-        tab_string = " ".join([string_parts[0], string_parts[int(num)+1]])
+#     string_parts = map[tab_col]
+#     if len(string_parts)==1:
+#         if int(num)==1:
+#             tab_string = string_parts[0]
+#         else:
+#             tab_string = None
+#     elif len(string_parts)==2:
+#         tab_string = " ".join([string_parts[0], str(num), string_parts[1]])
+#     else:
+#     #len > 2
+#         tab_string = " ".join([string_parts[0], string_parts[int(num)+1]])
 
-    return tab_string
+#     return tab_string
 
-def standardize_text(tab_numpy, tab_cols):
-
-    count=0
-    tab_strings = []
-    for num in tab_numpy:
-        if np.isnan(num) or num==-1:
-            pass
-        else:
-            tab_col = tab_cols[count]
-            tab_string = column_mapping(num, tab_col)
-            if tab_string is not None:
-                tab_strings.append(tab_string)
-        count+=1
-    text = " ".join(tab_strings)
-
-    return text

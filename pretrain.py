@@ -10,37 +10,37 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from args import parse_arguments
+from get_config import get_config
 from open_clip import tokenize
 from models.modeling import ImageClassifier
 from models.utils import cosine_lr
-from dataloader import get_img_dataloader
+from dataloader import get_video_dataloader
 from losses import ClipLoss
 
 from open_clip import create_model_and_transforms
 
-def pretrain(args, dataloader_tr, dataloader_val, run_name, init_logit_scale=np.log(1 / 0.07)):
-    #assert args.load is not None, "Please provide the path to a checkpoint through --load."
-    #assert args.train_dataset is not None, "Please provide a training dataset."
+def pretrain(configs, dataloader_tr, dataloader_val, run_name, init_logit_scale=np.log(1 / 0.07)):
+    #assert configs['load'] is not None, "Please provide the path to a checkpoint through --load."
+    #assert configs['train_dataset'] is not None, "Please provide a training dataset."
 
-    model = ImageClassifier(embed_dim_classhead=512, dropout_prob=0.5)
+    echoclip = ImageClassifier(embed_dim_classhead=512, dropout_prob=0.5)
 
-    for param in model.parameters():
+    for param in echoclip.parameters():
         param.requires_grad = True
     
     print_every = 1000
     num_batches = len(dataloader_tr)
-    model = model.cuda()
+    echoclip = echoclip.cuda()
 
-    params = [p for p in model.parameters() if p.requires_grad]
-    optimizer = torch.optim.AdamW(params, lr=args.lr, weight_decay=args.wd)
+    params = [p for p in echoclip.parameters() if p.requires_grad]
+    optimizer = torch.optim.AdamW(params, lr=config['lr'], weight_decay=config["wd"])
 
-    scheduler = cosine_lr(optimizer, args.lr, args.warmup_length, args.epochs * num_batches)
+    scheduler = cosine_lr(optimizer, config['lr'], config["warmup_length"], config["epochs"] * num_batches)
 
-    for epoch in range(args.pretrain_epochs):
-        model = model.cuda()
+    for epoch in range(config["pretrain_epochs"]):
+        echoclip = echoclip.cuda()
         
-        model.train()
+        echoclip.train()
 
         losses = []
         for i, batch in tqdm(enumerate(dataloader_tr)):
@@ -50,26 +50,30 @@ def pretrain(args, dataloader_tr, dataloader_val, run_name, init_logit_scale=np.
             scheduler(step)
             optimizer.zero_grad()
 
-            cine, tab_data, labels_AS, _ = batch
+            cine, report_data, _, _ = batch
             cine = cine.squeeze(1)
             cine = cine.cuda()
-            tab_data = tab_data #str input
-            labels_AS = labels_AS.cuda()
             data_time = time.time() - start_time
 
-            image_embeds = F.normalize(model.image_encoder(cine), dim=-1) #[b, f, embed]
+            b, f, c, h, w = cine.shape
+            #Remove batch dimension
+            cine = cine.reshape(-1, c, h, w) #[f, c, h, w]
+            video_embed = echoclip.model.encode_image(cine)
 
+            #temporal pooling across frames
+            video_embed = video_embed.mean(dim=0, keepdim=True) #[1, e] ##TODO - FIXBUG
+            #video_embed = F.normalize(echoclip.model.encode_image(cine), dim=-1) #[1, embed]
+            print(f"output shape of normalized video embedding: {video_embed.shape}")
             ## We'll use the CLIP BPE tokenizer to tokenize the prompts
-            tab_prompts = tokenize(tab_data).cuda()
+            text_prompts = tokenize(report_data).cuda()
             ## Now we can encode the prompts into embeddings
-            tab_embeds = F.normalize(model.text_encoder(tab_prompts), dim=-1)
+            text_embed = F.normalize(echoclip.model.encode_text(text_prompts), dim=-1)
 
             #CLIP loss 
             clip_loss = ClipLoss() #mean reduction
             logit_scale = nn.Parameter(torch.ones([]) * init_logit_scale)
-            loss = clip_loss(image_features=image_embeds, text_features=tab_embeds, logit_scale=logit_scale)
+            loss = clip_loss(image_features=video_embed, text_features=text_embed, logit_scale=logit_scale)
             losses += [loss]
-
             loss.backward()
 
             torch.nn.utils.clip_grad_norm_(params, 1.0)
@@ -88,59 +92,60 @@ def pretrain(args, dataloader_tr, dataloader_val, run_name, init_logit_scale=np.
         print(f"Avg. Loss for Train Epoch {epoch}: {loss_avg.item():.6f}")
 
 
-        print("Starting validation...")
-        model.eval()
+    #     print("Starting validation...")
+    #     echoclip.eval()
 
-        with torch.set_grad_enabled(False):
-            val_losses = []
-            for cine, tab_data, labels_AS, _ in tqdm(dataloader_val):
-                ## count+=1
-                cine = cine.squeeze(1)
-                cine = cine.cuda()
-                tab_data = tab_data
-                labels_AS = labels_AS.cuda()
+    #     with torch.set_grad_enabled(False):
+    #         val_losses = []
+    #         for cine, report_data, labels_AS, _ in tqdm(dataloader_val):
+    #             ## count+=1
+    #             cine = cine.squeeze(1)
+    #             cine = cine.cuda()
+    #             labels_AS = labels_AS.cuda()
             
-                image_embeds = F.normalize(model.image_encoder(cine), dim=-1) #[b, f, embed]
+    #             image_embeds = F.normalize(echoclip.model.image_encoder(cine), dim=-1) #[b, f, embed]
 
-                ## We'll use the CLIP BPE tokenizer to tokenize the prompts
-                tab_prompts = tokenize(tab_data).cuda()
-                ## Now we can encode the prompts into embeddings
-                tab_embeds = F.normalize(model.text_encoder(tab_prompts), dim=-1)
+    #             ## We'll use the CLIP BPE tokenizer to tokenize the prompts
+    #             text_prompts = tokenize(report_data).cuda()
+    #             ## Now we can encode the prompts into embeddings
+    #             tab_embeds = F.normalize(echoclip.model.text_encoder(text_prompts), dim=-1)
 
-                #CLIP loss 
-                clip_loss = ClipLoss() #mean reduction
-                logit_scale = nn.Parameter(torch.ones([]) * init_logit_scale)
-                loss = clip_loss(image_features=image_embeds, text_features=tab_embeds, logit_scale=logit_scale)
-                val_losses += [loss]
+    #             #CLIP loss 
+    #             clip_loss = ClipLoss() #mean reduction
+    #             logit_scale = nn.Parameter(torch.ones([]) * init_logit_scale)
+    #             loss = clip_loss(image_features=image_embeds, text_features=tab_embeds, logit_scale=logit_scale)
+    #             val_losses += [loss]
         
-        val_loss = torch.mean(torch.stack(val_losses))
-        print(f"Epoch: {epoch}" f"Val Loss: {val_loss}", flush=True)
-        if args.use_wandb:
-            wandb.log({"tr_loss":loss_avg, "val_loss":val_loss})
+    #     val_loss = torch.mean(torch.stack(val_losses))
+    #     print(f"Epoch: {epoch}" f"Val Loss: {val_loss}", flush=True)
+    #     if config["use_wandb"]:
+    #         wandb.log({"tr_loss":loss_avg, "val_loss":val_loss})
             
-        ## Saving model
-        if args.pretrain_save is not None:
-            dir_path = os.path.join(args.pretrain_save, run_name)
-            os.makedirs(dir_path, exist_ok=True)
-            model_path = os.path.join(dir_path, f'checkpoint_{epoch+1}.pt')
-            print('Saving model to', model_path)
-            torch.save({'model': model.state_dict()}, model_path)
+    #     ## Saving model
+    #     if config['pretrain_save'] is not None:
+    #         dir_path = os.path.join(config['pretrain_save'], run_name)
+    #         os.makedirs(dir_path, exist_ok=True)
+    #         model_path = os.path.join(dir_path, f'checkpoint_{epoch+1}.pt')
+    #         print('Saving model to', model_path)
+    #         torch.save({'model': echoclip.model.state_dict()}, model_path)
 
-    if args.pretrain_save is not None:
-        return model_path
+    # if config['pretrain_save'] is not None:
+    #     return model_path
 
 
 if __name__ == '__main__':
-    args = parse_arguments() 
+    config = get_config()
 
-    run_name = "eclip_debug"
-    if args.use_wandb:
-        run = wandb.init(project="as_tab", entity="rcl_stroke", config = args, name = run_name, dir=args.wandb_dir)
+    run_name = config["exp_name"]
+    config["type_of_training"] = "pretraining"
 
-    dataloader_tr = get_img_dataloader(args, split='train', mode='train')
-    dataloader_val = get_img_dataloader(args, split='val', mode='val')
-     
-    pretrain(args, dataloader_tr, dataloader_val, run_name)
+    if config["use_wandb"]:
+        run = wandb.init(project="as_tab", entity="rcl_stroke", config = config, name = run_name, dir=config["wandb_dir"])
 
-    if args.use_wandb:
-        wandb.finish()
+    dataloader_tr = get_video_dataloader(config, split='train', mode='train')
+    dataloader_val = get_video_dataloader(config, split='val', mode='val')
+    
+    pretrain(config, dataloader_tr, dataloader_val, run_name)
+
+    # if config["use_wandb"]:
+    #     wandb.finish()

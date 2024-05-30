@@ -17,7 +17,7 @@ from random import lognormvariate
 from random import seed
 import torch.nn as nn
 import random
-from utils import load_as_data, preprocess_as_data, fix_leakage, standardize_text
+from utils import load_as_data, preprocess_as_data, fix_leakage
 
 seed(42)
 torch.random.manual_seed(42)
@@ -48,8 +48,8 @@ def png_loader(path):
 
 tufts_label_schemes: Dict[str, Dict[str, Union[int, float]]] = {
     'binary': {'no_AS': 0, 'mild_AS': 1, 'mildtomod_AS': 1, 'moderate_AS': 1, 'severe_AS': 1},
-    'mild_mod': {'no_AS': 0, 'mild_AS': 1, 'mildtomod_AS': 1, 'moderate_AS': 2, 'severe_AS': 2},
-    'mod_severe': {'no_AS': 0, 'mild_AS': 1, 'mildtomod_AS': 1, 'moderate_AS': 1, 'severe_AS': 2},
+    'mild_mod': {'no_AS': 0, 'mild_AS': 1, 'mildtomod_AS': 1, 'moderate_AS': 1, 'severe_AS': 2},
+    'mod_severe': {'no_AS': 0, 'mild_AS': 1, 'mildtomod_AS': 1, 'moderate_AS': 2, 'severe_AS': 2},
     'four_class': {'no_AS': 0, 'mild_AS': 1, 'mildtomod_AS': 1, 'moderate_AS': 2, 'severe_AS': 3},
     'five_class': {'no_AS': 0, 'mild_AS': 1, 'mildtomod_AS': 2, 'moderate_AS': 3, 'severe_AS': 4},
 }
@@ -80,7 +80,7 @@ class_labels: Dict[str, List[str]] = {
 }
 
     
-def get_video_dataloader(args, split, mode):
+def get_video_dataloader(config, split, mode):
     '''
     Uses the configuration dictionary to instantiate AS dataloaders
 
@@ -99,7 +99,7 @@ def get_video_dataloader(args, split, mode):
     '''
     
     if mode=='train':
-        flip=args.flip_rate 
+        flip=config['flip_rate'] 
         tra = True
         show_info = False
     elif mode=='val':
@@ -115,12 +115,12 @@ def get_video_dataloader(args, split, mode):
     bsize = 1
     
     # read in the data directory CSV as a pandas dataframe
-    raw_dataset = pd.read_csv(args.img_path_dataset)
-    dataset = pd.read_csv(args.img_path_dataset)
+    raw_dataset = pd.read_csv(config['img_path_dataset'])
+    dataset = raw_dataset.copy()
         
     # append dataset root to each path in the dataframe
-    dataset['path'] = dataset['path'].map(lambda x: join(args.dataset_root, x))
-    view = args.view
+    dataset['path'] = dataset['path'].map(lambda x: join(config['dataset_root'], x))
+    view = config['view']
         
     if view in ('plax', 'psax'):
         dataset = dataset[dataset['view'] == view]
@@ -128,35 +128,23 @@ def get_video_dataloader(args, split, mode):
         raise ValueError(f'View should be plax, psax or all, got {view}')
        
     # remove unnecessary columns in 'as_label' based on label scheme
-    label_scheme_name = args.label_scheme_name
+    label_scheme_name = config['label_scheme_name']
     scheme = label_schemes[label_scheme_name]
     dataset = dataset[dataset['as_label'].isin( scheme.keys() )]
 
     #load tabular dataset
-    tab_train, tab_val, tab_test = load_as_data(csv_path = args.tab_path_dataset,
-                                                drop_cols = args.drop_cols,
-                                                num_ex = None,
-                                                scale_feats = args.scale_feats)
-                                                
-
-    #perform imputation 
-    if args.tab_preprocess:
-        train_set, val_set, test_set, all_cols = preprocess_as_data(tab_train, tab_val, tab_test, args.categorical_cols)
-    else: 
-        train_set = tab_train.drop("as_label", axis=1)
-        val_set = tab_val.drop("as_label", axis=1)
-        test_set = tab_test.drop("as_label", axis=1)
-        all_cols = train_set.columns.to_list()
+    #AS label INCLUDED in text data 
+    train_set, val_set, test_set = load_as_data(csv_path = config['report_path_dataset'])
         
     # Take train/test/val
     if split in ('train', 'val', 'test'):
         dataset = dataset[dataset['split'] == split]
         if split=='train':
-            tab_dataset = train_set
+            report_dataset = train_set
         elif split=='val':
-            tab_dataset = val_set
+            report_dataset = val_set
         elif split=='test':
-            tab_dataset = test_set
+            report_dataset = test_set
     else:
         raise ValueError(f'View should be train/val/test, got {split}')
     
@@ -168,11 +156,11 @@ def get_video_dataloader(args, split, mode):
     elif split == 'test':
         dataset = fix_leakage(df=raw_dataset, df_subset=dataset, split=split)
         
-    dset = AorticStenosisDataset(args=args,
-                                video=False,
+    dset = AorticStenosisDataset(config=config,
+                                video=config["video_input"],
                                 img_path_dataset=dataset, 
-                                tab_dataset=tab_dataset,
-                                tab_cols=all_cols,
+                                report_dataset=report_dataset,
+                                type_of_training=config["type_of_training"],
                                 split=split,
                                 transform=tra,
                                 normalize=True,
@@ -182,118 +170,118 @@ def get_video_dataloader(args, split, mode):
                                 label_scheme = scheme)
     
     if mode=='train':
-        if args.sampler == 'AS':
+        if config['sampler'] == 'AS':
             sampler_AS = dset.class_samplers()
-            loader = DataLoader(dset, batch_size=bsize, sampler=sampler_AS, num_workers=args.num_workers)
+            loader = DataLoader(dset, batch_size=bsize, sampler=sampler_AS, num_workers=config['num_workers'])
         else: # random sampling
-            loader = DataLoader(dset, batch_size=bsize, shuffle=True, num_workers=args.num_workers)
+            loader = DataLoader(dset, batch_size=bsize, shuffle=True, num_workers=config['num_workers'])
     else:
-        loader = DataLoader(dset, batch_size=bsize, shuffle=False, num_workers=args.num_workers)
+        loader = DataLoader(dset, batch_size=bsize, shuffle=False, num_workers=config['num_workers'])
     return loader
 
-def get_img_dataloader(args, split, mode='train'):
-    if mode=='train':
-        flip=args.flip_rate 
-        tra = True
-        show_info = False
-    elif mode=='val':
-        flip = 0.0
-        tra = False
-        show_info = False
-    elif mode=='test':
-        flip = 0.0
-        tra = False
-        show_info = True
+# def get_img_dataloader(config, split, mode='train'):
+#     if mode=='train':
+#         flip=config['flip_rate'] 
+#         tra = True
+#         show_info = False
+#     elif mode=='val':
+#         flip = 0.0
+#         tra = False
+#         show_info = False
+#     elif mode=='test':
+#         flip = 0.0
+#         tra = False
+#         show_info = True
         
-    fr = 16
-    bsize = args.batch_size
+#     fr = 16
+#     bsize = config['batch_size']
     
-    # read in the data directory CSV as a pandas dataframe
-    raw_dataset = pd.read_csv(args.img_path_dataset)
-    dataset = pd.read_csv(args.img_path_dataset)
+#     # read in the data directory CSV as a pandas dataframe
+#     raw_dataset = pd.read_csv(config['img_path_dataset'])
+#     dataset = raw_dataset.copy()
         
-    # append dataset root to each path in the dataframe
-    dataset['path'] = dataset['path'].map(lambda x: join(args.dataset_root, x))
-    view = args.view
+#     # append dataset root to each path in the dataframe
+#     dataset['path'] = dataset['path'].map(lambda x: join(config['dataset_root'], x))
+#     view = config['view']
         
-    if view in ('plax', 'psax'):
-        dataset = dataset[dataset['view'] == view]
-    elif view != 'all':
-        raise ValueError(f'View should be plax, psax or all, got {view}')
+#     if view in ('plax', 'psax'):
+#         dataset = dataset[dataset['view'] == view]
+#     elif view != 'all':
+#         raise ValueError(f'View should be plax, psax or all, got {view}')
     
-    # remove unnecessary columns in 'as_label' based on label scheme
-    label_scheme_name = args.label_scheme_name
-    scheme = label_schemes[label_scheme_name]
+#     # remove unnecessary columns in 'as_label' based on label scheme
+#     label_scheme_name = config['label_scheme_name']
+#     scheme = label_schemes[label_scheme_name]
 
-    #load tabular dataset
-    tab_train, tab_val, tab_test = load_as_data(csv_path = args.tab_path_dataset,
-                                                drop_cols = args.drop_cols,
-                                                num_ex = None,
-                                                scale_feats = args.scale_feats)
+#     #load tabular dataset
+#     tab_train, tab_val, tab_test = load_as_data(csv_path = config['tab_path_dataset'],
+#                                                 drop_cols = config['drop_cols'],
+#                                                 num_ex = None,
+#                                                 scale_feats = config['scale_feats'])
                                                 
 
-    #perform imputation 
-    if args.tab_preprocess:
-        train_set, val_set, test_set, all_cols = preprocess_as_data(tab_train, tab_val, tab_test, args.categorical_cols)
-    else: 
-        train_set = tab_train.drop("as_label", axis=1)
-        val_set = tab_val.drop("as_label", axis=1)
-        test_set = tab_test.drop("as_label", axis=1)
-        all_cols = train_set.columns.to_list()
-    # Take train/test/val
-    if split in ('train', 'val', 'test'):
-        dataset = dataset[dataset['split'] == split]
-        if split=='train':
-            tab_dataset = train_set
-        elif split=='val':
-            tab_dataset = val_set
-        elif split=='test':
-            tab_dataset = test_set
-    else:
-        raise ValueError(f'View should be train/val/test, got {split}')
+#     #perform imputation 
+#     if config['tab_preprocess']:
+#         train_set, val_set, test_set, all_cols = preprocess_as_data(tab_train, tab_val, tab_test, config['categorical_cols'])
+#     else: 
+#         train_set = tab_train.drop("as_label", axis=1)
+#         val_set = tab_val.drop("as_label", axis=1)
+#         test_set = tab_test.drop("as_label", axis=1)
+#         all_cols = train_set.columns.to_list()
+#     # Take train/test/val
+#     if split in ('train', 'val', 'test'):
+#         dataset = dataset[dataset['split'] == split]
+#         if split=='train':
+#             tab_dataset = train_set
+#         elif split=='val':
+#             tab_dataset = val_set
+#         elif split=='test':
+#             tab_dataset = test_set
+#     else:
+#         raise ValueError(f'View should be train/val/test, got {split}')
     
-    #Fix data leakage 
-    if split == 'train':
-        dataset = fix_leakage(df=raw_dataset, df_subset=dataset, split=split)
-    elif split == 'val':
-        dataset = fix_leakage(df=raw_dataset, df_subset=dataset, split=split)
-    elif split == 'test':
-        dataset = fix_leakage(df=raw_dataset, df_subset=dataset, split=split)
+#     #Fix data leakage 
+#     if split == 'train':
+#         dataset = fix_leakage(df=raw_dataset, df_subset=dataset, split=split)
+#     elif split == 'val':
+#         dataset = fix_leakage(df=raw_dataset, df_subset=dataset, split=split)
+#     elif split == 'test':
+#         dataset = fix_leakage(df=raw_dataset, df_subset=dataset, split=split)
     
-    dset = AorticStenosisDataset(args=args,
-                                video=False,
-                                img_path_dataset=dataset, 
-                                tab_dataset=tab_dataset,
-                                tab_cols=all_cols,
-                                split=split,
-                                transform=tra,
-                                normalize=True,
-                                frames=fr,
-                                return_info=show_info,
-                                flip_rate=flip,
-                                label_scheme = scheme)
+#     dset = AorticStenosisDataset(args=config,
+#                                 video=False,
+#                                 img_path_dataset=dataset, 
+#                                 tab_dataset=tab_dataset,
+#                                 tab_cols=all_cols,
+#                                 split=split,
+#                                 transform=tra,
+#                                 normalize=True,
+#                                 frames=fr,
+#                                 return_info=show_info,
+#                                 flip_rate=flip,
+#                                 label_scheme = scheme)
     
-    if mode=='train':
-        if args.sampler == 'AS':
-            sampler_AS = dset.class_samplers()
-            loader = DataLoader(dset, batch_size=bsize, sampler=sampler_AS, num_workers=args.num_workers)
-        else: # random sampling
-            loader = DataLoader(dset, batch_size=bsize, shuffle=True, num_workers=args.num_workers)
-    else:
-        loader = DataLoader(dset, batch_size=bsize, shuffle=False, num_workers=args.num_workers)
-    return loader
+#     if mode=='train':
+#         if config['sampler'] == 'AS':
+#             sampler_AS = dset.class_samplers()
+#             loader = DataLoader(dset, batch_size=bsize, sampler=sampler_AS, num_workers=config['num_workers'])
+#         else: # random sampling
+#             loader = DataLoader(dset, batch_size=bsize, shuffle=True, num_workers=config['num_workers'])
+#     else:
+#         loader = DataLoader(dset, batch_size=bsize, shuffle=False, num_workers=config['num_workers'])
+#     return loader
 
-def get_tufts_dataloader(args, split, mode='train'):
+def get_tufts_dataloader(config, split, mode='train'):
     
     if mode=='train':
         flip = 0.5
         tra = True
-        bsize = args.batch_size 
+        bsize = config['batch_size'] 
         patient_info = False
     elif mode=='val':
         flip = 0.0
         tra = False
-        bsize = args.batch_size 
+        bsize = config['batch_size'] 
         patient_info = False
     elif mode=='test':
         flip = 0.0
@@ -301,16 +289,16 @@ def get_tufts_dataloader(args, split, mode='train'):
         bsize = 1
         patient_info = True
         
-    dset = TMEDDataset(args=args,
-                       dataset_root=args.tufts_droot, 
+    dset = TMEDDataset(args=config,
+                       dataset_root=config['tufts_droot'], 
                         split=split,
-                        view=args.view,
+                        view=config['view'],
                         transform=tra,
                         normalize=True,
                         flip_rate=flip,
                         patient_info = patient_info, 
-                        label_scheme_name=args.tufts_label_scheme_name,
-                        view_scheme_name=args.view_scheme_name
+                        label_scheme_name=config['tufts_label_scheme_name'],
+                        view_scheme_name=config['view_scheme_name']
                          )
     
     if mode=='train':
@@ -322,12 +310,12 @@ def get_tufts_dataloader(args, split, mode='train'):
 
 class AorticStenosisDataset(Dataset):
     def __init__(self, 
-                 args,
+                 config,
                  video,
                  label_scheme,
                  img_path_dataset,
-                 tab_dataset,
-                 tab_cols,
+                 report_dataset,
+                 type_of_training,
                  split: str = 'train',
                  transform: bool = True, normalize: bool = True, 
                  frames: int = 16, resolution: int = 224,
@@ -344,9 +332,8 @@ class AorticStenosisDataset(Dataset):
         self.scheme = label_scheme
         self.cine_loader = get_loader(cine_loader)
         self.dataset = img_path_dataset
-        self.tab_dataset = tab_dataset
-        self.tab_preprocess = args.tab_preprocess
-        self.tab_cols = tab_cols
+        self.report_dataset = report_dataset
+        self.type_of_training = type_of_training
         self.frames = frames
         self.resolution = (resolution, resolution)
         self.split = split
@@ -402,31 +389,25 @@ class AorticStenosisDataset(Dataset):
         m = 0.099
         std = 0.171
         return (in_tensor-m)/std
-    
-    def tab_to_text(self, tab_numpy):
-        #text = ["%.2f" % num for num in tab_numpy.tolist()]
-        if self.tab_preprocess:
-            text = ','.join(['{:.2f}'.format(num) for num in tab_numpy])
-        else:
-            text = standardize_text(tab_numpy, self.tab_cols)
-        return text
 
     def __getitem__(self, item):
         data_info = self.dataset.iloc[item]
 
         #get associated tabular data based on echo ID
         study_num = data_info['Echo ID#']
-        tab_info = self.tab_dataset.loc[int(study_num)]
-        #tab_info = torch.tensor(tab_info.values, dtype=torch.float32)
+        # storing labels as a dictionary will be in a future update        
+        labels_AS = torch.tensor(self.scheme[data_info['as_label']])
 
-        #turn tabular data into text
-        tab_info = self.tab_to_text(tab_info.values)
+        
+        if self.type_of_training == "pretraining":
+            report_info = self.report_dataset.loc[int(study_num)]
+            report_text = report_info['report_text']
 
         cine_original = self.cine_loader(data_info['path'])
             
         window_length = 60000 / (lognormvariate(self.hr_mean, self.hr_srd) * data_info['frame_time'])
         cine = self.get_random_interval(cine_original, window_length)
-
+        
         if self.video:
             cine = resize(cine, (32, *self.resolution)) 
         else:
@@ -436,9 +417,6 @@ class AorticStenosisDataset(Dataset):
 
         cine = torch.tensor(cine).unsqueeze(1) #[f, c, h, w]
         
-        # storing labels as a dictionary will be in a future update        
-        labels_AS = torch.tensor(self.scheme[data_info['as_label']])
-
         if self.transform:
             if self.contrstive == 'CE' or self.contrstive == 'Linear':
                 cine = self.transform(cine)
@@ -457,13 +435,16 @@ class AorticStenosisDataset(Dataset):
         cine = self.gray_to_gray3(cine)
         cine = cine.float()
         
-        ret = (cine, tab_info, labels_AS, study_num)
+        if self.type_of_training == "pretraining":
+            ret = (cine, report_text, labels_AS, study_num)
+        else: #finetuning
+            ret = (cine, labels_AS, study_num)
         
         return ret
 
 class TMEDDataset(Dataset):
     def __init__(self, 
-                 args,
+                 config,
                  dataset_root: str = '~/as',
                  view: str = 'PLAX', # PLAX/PSAX/PLAXPSAX/no_other/all
                  split: str = 'all', # train/val/test/'all'
@@ -480,7 +461,7 @@ class TMEDDataset(Dataset):
         self.dataset_root = dataset_root
         
         # read in the data directory CSV as a pandas dataframe
-        dataset = pd.read_csv(join(args.tufts_droot, args.tufts_csv_name)) 
+        dataset = pd.read_csv(join(config['tufts_droot'], config['tufts_csv_name'])) 
         # append dataset root to each path in the dataframe
         dataset['path'] = dataset.apply(self.get_data_path_rowwise, axis=1)
         
